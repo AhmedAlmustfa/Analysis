@@ -1,0 +1,923 @@
+---
+title: "Accidents Analysis Across Italy"
+format:
+  html:
+    theme: flatly
+    code-fold: true
+    toc: true
+    number-sections: true
+    code-copy: true
+---
+
+# Introduction
+
+In this Report we are going to analyse the dataset Injuries among workers, which represents Six-monthly injuries data across all Italy grouped by "region", and it is downloadable from [INAIL](https://dati.inail.it/opendata/elements1/DatiConCadenzaSemestraleInfortuniAbruzzo). The first step, we collect the data by region from INAIL website and merge the data into one dataset, the second step we create a package in R for the dataset (`accidentr` ). The dataset contains 25 variables and 3052056 observations, and the variables are grouped into 7 types as the following:
+
+:::[.incremental]
+
+***A - temporal location of the injury:***
+
+:::{layout-ncol=1}
+1. detection date: it is the date of extraction of the data (recorded and validated) from the archives; temporally qualifies the information base;
+2. protocol date (of the case): it is the protocol date of the case;
+3. date of occurrence: is the date on which the accident occurred;
+4. date of definition: is the date of the prevailing administrative definition;
+5. date of death: is the date of death of the injured party following an accident;
+:::
+
+***B - geographical location of the accident:***
+
+:::{layout-ncol=1}
+6. place of occurrence: is the ISTAT code of the province where the accident occurred;
+:::
+
+
+***C - characteristics of the injured person:***
+
+:::{layout-ncol=1}
+7. identification of the injured person: internal code (for longitudinal analysis);
+8. gender: is the gender of the injured person;
+9. age: the age of the injured party on the `date of occurrence`, expressed in years of age;
+10. place of birth: cadastral code of the injured party's place of birth;
+:::
+
+***D - method of injury:***
+
+:::{layout-ncol=1}
+11. modality of occurrence: code of the modality (if `during work`, `in itinere`);
+12. with / without means of transport (involved): mode code (if `with` or `without`);
+:::
+
+***E - administrative characteristics of the injury:***
+
+:::{layout-ncol=1}
+13. case identifier: internal code (for longitudinal analyzes);
+14. administrative definition: code that characterizes the administrative situation of the accident case (if `positive` or `negative`) or the `exempt` outcome or the `preliminary investigation` situation;
+15. administrative definition of the fatal outcome: code that characterizes the administrative situation of the case of an accident with a fatal outcome (if `positive` or `negative`) or the situation `in investigation`;
+16. indemnity: code of the type of indemnity (if `temporary`, `capital`, `direct annuity`, `survivors' annuity`);
+17. cause of negativity for the fatal outcome: code of the cause for which the case of an accident with a fatal outcome is defined as negative (if "activity not protected", for "lack of valid documentation", if for "lack of itinere ", for" lack of condition during work ", if for" fatal outcome not attributable to the event ", if" unprotected person ", if for" other causes of negativity ");
+:::
+
+***F - medico-legal characteristics of the accident:***
+
+:::{layout-ncol=1}
+18. degree of impairment: overall degree of impairment of the psychophysical integrity of the injured person;
+19. days indemnified: number of days indemnified;
+:::
+
+***G - characteristics of the employer:***
+
+:::{layout-ncol=1}
+20. employer: internal identification code of the employer (for longitudinal analyzes);
+21. territorial insurance position: internal code;
+22. sector of economic activity: this is the primary ATECO code of the insurer;
+23. management: if `agriculture`, `industry and services`, `on behalf of the state`;
+24. tariff management: if `industry`, `crafts`, `tertiary`, `other activities`;
+25. large tariff group: code of the large tariff group (whether `agricultural processing and food`,`chemical, paper and leather`, `construction and plant`, `energy and communications`, `wood and similar`, `metals and machinery`;` rock and glass mining `,` textiles and packaging `,
+`transport and warehouses `,` various activities `).
+
+
+:::
+
+:::
+
+*Required Libraries*
+
+:::[.incremental]
+
+* accidentr
+* ggplot
+* dplyr
+* scales
+* tidyr
+* treemapify
+* plotly
+
+:::
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(accidentr)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(scales)
+library(tidyr)
+library(treemapify)
+library(reactable)
+library(ltm)
+library(highcharter)
+library(purrr)
+library(geojsonio)
+library(httr)
+```
+
+*Load the data*
+```{r}
+data(Ita_Regions)
+```
+
+*overview of the data*
+```{r}
+str(Ita_Regions)
+```
+
+
+
+
+
+*Check for missing values*
+```{r, results='hide'}
+sapply(Ita_Regions, function(x) sum(is.na(x)))
+```
+*Check for unique values in every columns*
+```{r, results='hide'}
+sapply(Ita_Regions, function(x) length(unique(x)))
+```
+
+
+
+*Extract the number of accidents everyday*
+
+```{r}
+dataACC <- Ita_Regions %>%  
+  count(DataAccadimento) %>%
+  #summarise(n = sum(n)) %>%
+  #mutate(dat = as.Date(DataAccadimento, format = "%m/%d/%Y"))  
+  group_by(DataAccadimento)
+#dataACC
+```
+
+*Exreact the day, month and year*
+
+```{r}
+data2 <- dataACC
+data2$Date_Time <- strptime(data2$DataAccadimento, format = "%d/%m/%Y")
+data2$Day <- format(data2$Date_Time, "%d")
+data2$Month <- format(data2$Date_Time, "%m")
+data2$NameMonth <- format(data2$Date_Time, "%b")
+data2$Year <- format(data2$Date_Time, "%Y")
+
+```
+
+# Data Visualization and Analysis
+
+
+## The number of Injuries by year
+*aggregate number of accidents by year*
+```{r}
+mydata_total <- data2 %>% 
+  group_by(Year) %>%
+  summarise(total = sum(n)) %>%
+  as.data.frame()
+write.csv(mydata_total, "index.csv", row.names = FALSE)
+```
+
+```{r}
+reactable(
+  mydata_total,
+  columns = list(
+    Year = colDef(name = "Years"),
+    total= colDef(name = "Total of accidents")
+  )
+)
+```
+
+
+```{r}
+ggplot(mydata_total, 
+       aes(x = Year, 
+           y = total)) +
+  geom_line(size = 1.5, 
+            color = "lightgrey") +
+  geom_point(size = 3, 
+             color = "steelblue") +
+  theme_minimal() +
+  labs(y = "Number of Accidents (years)", 
+       x = "Year",
+       title = "Number of injuries over time",
+       subtitle = "Italy (2017-2021)",
+       caption = "Source:          https://dati.inail.it/opendata/default/Infortuni/index.html")
+
+```
+From the graph we can tell that, 2017 has the highest rate of injuries while 2021 has the lowest rate of injuries However, the frequency of injuries has decreased dramatically by -11.18% from 2019 to 2020 and this is quit reasonable due to the pandemic (Covid 19), and the frequent of injuries has declined from 2020 to 2021 by -1.47%. In general, the frequency of injuries is showing a declining trend over thepast 5 years period except the year 2019 there was an increase by 0.081% from the year 2018 to 2019.
+
+## The number of injuries by months
+
+*Aggregate number of accidents by month spread across the years*
+```{r}
+mydata <- data2 %>% 
+  group_by(Year, Month, NameMonth) %>%
+  summarise(total = sum(n)) %>%
+  spread(key = "Year", value = total) %>%
+  as.data.frame()
+#mydata
+```
+```{r}
+colnames(mydata) <- c("Month", "NameMonth", "Year2017", "Year2018", "Year2019",
+                      "Year2020", "Year2021")
+write.csv(mydata, "df.csv")
+df <- read.csv("df.csv")
+```
+
+```{r}
+reactable(
+  df[,-1]
+)
+```
+
+
+```{r}
+colors = c("Year 2017" ="red","Year 2018"= "blue",
+           "Year 2019" ="green","Year 2020"= "orange","Year 2021" = "black")
+ggplot(df, aes(x = Month)) + 
+  geom_line(aes(y = Year2017, color = "Year 2017"), size = 0.5) +
+  geom_line(aes(y = Year2018, color = "Year 2018"), size = 0.5) +
+  geom_line(aes(y = Year2019, color = "Year 2019"), size = 0.5) +
+  geom_line(aes(y = Year2020, color = "Year 2020"), size = 0.5) +
+  geom_line(aes(y = Year2021, color = "Year 2021"), size = 0.5) +
+  labs(x = "Months",
+         y = "number of injuries",
+         color = "Legend") +
+  scale_color_manual(values = colors) +
+  xlim(1,12) +
+  theme_minimal()
+  
+```
+From the graph we can see that, the number of injuries around summer is always lower with respect to other seasons. However, after summer there is a dramatic increase in the number of injuries across Italy. Furthermore, we noticed as well there are three peeks in the year except for the year 2020, the peeks are around March, May and October. Considering the years of the pandemic; in March of 2020 the number of injuries declined sharply and hit the lowest value, in May of the same year the number of injuries hits the peek around November and this is the highest number of injuries recorded with respect to the other years. 
+
+
+# Index of injuries
+
+## Index of Injuries by year
+
+```{r}
+Index <- read.csv("index.csv")
+Index$Num_Wks <- c(16518031, 16911409, 17336533, 15960796, 17146622)
+Index$accident_Indx <- round((Index$total/Index$Num_Wks)*100, 4)
+#Index
+```
+
+```{r}
+reactable(
+  Index,
+  columns = list(
+    Year = colDef(name = "Years"),
+    total= colDef(name = "Total of accidents"),
+    Num_Wks = colDef(name = "Number of workers"),
+    accident_Indx = colDef(name = "Accident Index")
+  )
+)
+```
+
+```{r}
+colors = c("Index" ="blue")
+ggplot(Index, aes(x = Year)) + 
+  geom_line(aes(y = accident_Indx, color = "Index"), size = 0.5) +
+  labs(x = "Years",
+         y = "Percentage of injuries ",
+         color = "Legend") +
+  scale_color_manual(values = colors) +
+  theme_minimal()
+  
+```
+
+The graph illustrates the index of injury `(Number of accidents/Number of workers)` in yearly bases, the number of workers is obtained from [Bancadati](https://bancadaticsa.inail.it/bancadaticsa/bancastatistica.asp?cod=0), from the graph we can see that the index of injuries have a downward trend over the years, with 3.89% at the year 2017 and 3.27%. The year 2021 shows the percentage of the injuries has declined by 0.62% from the year 2020. 
+
+## Index of Injuries by economic sector
+
+
+```{r}
+library(readxl)
+eco_set_index <- read_excel("data_index.xlsx", sheet = 1)
+colnames(eco_set_index) <- c("economic_sector", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(eco_set_index)
+```
+## Index of Injuries by Tariff Inail
+
+```{r}
+Tari_inail <- read_excel("data_index.xlsx", sheet = 2)
+colnames(Tari_inail) <- c("Tariff_Inail", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(Tari_inail)
+  
+```
+## Index of Injuries by management tariff
+
+```{r}
+gestione <- read_excel("data_index.xlsx", sheet = 3)
+colnames(gestione) <- c("gestione_tarif", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(gestione)
+```
+## Index of Injuries by Ripartizione geografica
+
+```{r}
+Rep_geo <- read_excel("data_index.xlsx", sheet = 4)
+colnames(Rep_geo) <- c("Rep_geo", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(Rep_geo)
+```
+## Index of Injuries by company diamension
+
+```{r}
+Dim_azend <- read_excel("data_index.xlsx", sheet = 5)
+colnames(Dim_azend) <- c("Dim_azend", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(Dim_azend)
+```
+
+```{r}
+ggplot(Dim_azend, 
+       aes(x=Index2021, 
+           y=reorder(Dim_azend, Index2021))) +
+  geom_point(color="blue", 
+             size = 2) +
+  geom_segment(aes(x = 0.5, 
+               xend = Index2021, 
+               y = reorder(Dim_azend, Index2021), 
+               yend = reorder(Dim_azend, Index2021)),
+               color = "lightgrey") +
+  labs (x = "Injuries by company diamension",
+        y = "",
+        title = "ndex of iInjuries by company diamension",
+        subtitle = "Data  from - 2021") +
+  theme_minimal() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+```{r}
+ggplot(Dim_azend, 
+       aes(x=Index2017, 
+           y=reorder(Dim_azend, Index2017))) +
+  geom_point(color="blue", 
+             size = 2) +
+  geom_segment(aes(x = 0.5, 
+               xend = Index2017, 
+               y = reorder(Dim_azend, Index2017), 
+               yend = reorder(Dim_azend, Index2017)),
+               color = "lightgrey") +
+  labs (x = "Injuries by company diamension",
+        y = "",
+        title = "Index of injuries by company diamension",
+        subtitle = "Data  from - 2017") +
+  theme_minimal() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+## Index of Injuries by regions
+
+```{r}
+region <- read_excel("data_index.xlsx", sheet = 6)
+colnames(region) <- c("region", "Index2017", "Index2018",
+                          "Index2019", "Index2020", "Index2021")
+head(region)
+```
+```{r}
+ggplot(region, 
+       aes(x=Index2017, 
+           y=reorder(region, Index2017))) +
+  geom_point(color="blue", 
+             size = 2) +
+  geom_segment(aes(x = 40, 
+               xend = Index2017, 
+               y = reorder(region, Index2017), 
+               yend = reorder(region, Index2017)),
+               color = "lightgrey") +
+  labs (x = "Injuries by Region",
+        y = "",
+        title = "Index of injuries by Region",
+        subtitle = "Data  from - 2017") +
+  theme_minimal() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+```{r}
+ggplot(region, 
+       aes(x=Index2021, 
+           y=reorder(region, Index2021))) +
+  geom_point(color="blue", 
+             size = 2) +
+  geom_segment(aes(x = 40, 
+               xend = Index2021, 
+               y = reorder(region, Index2021), 
+               yend = reorder(region, Index2021)),
+               color = "lightgrey") +
+  labs (x = "Injuries by Region",
+        y = "",
+        title = "Index of injuries by Region",
+        subtitle = "Data  from - 2021") +
+  theme_minimal() + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+```
+```{r}
+
+```
+
+
+## The porportion between male and female injuries
+
+The number of injuries occurring to male is about double the number of injuries for females, and this result is reasonable because most of the dangerous job are performed by male. 
+
+```{r}
+Gender <- Ita_Regions %>%
+  count(Genere) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(Gender, 
+       aes(x = reorder(Genere, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Genere", 
+       y = "Percent", 
+       title  = "Injuries by Gender")
+```
+
+```{r}
+ggplot(Ita_Regions, 
+       aes(x = Eta, 
+           fill = Genere)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Injuries and Age distribution by Gender") +
+  theme_minimal()
+```
+
+
+From the figure above, we can see that injuries among female workers is at the highest rate around the ages 30, 40 and 50, while the age with most frequent injuries among male workers is around the ages 40, 50 and 60. However, at ages from 20 -30 the frequency of injuries for the female workers is higher than male, while at the ages lower than 20 the injuries rate is higher among male workers with respect to female workers. For ages greater than 40 till 60 the injuries is higher for male compared to female.
+
+## Modality of occurrence
+
+```{r}
+# create a pie chart with slice labels
+Mod_acc <- Ita_Regions %>%
+  count(ModalitaAccadimento) %>%
+  arrange(desc(ModalitaAccadimento)) %>%
+  mutate(prop = round(n*100/sum(n), 1),
+         lab.ypos = cumsum(prop) - 0.5*prop)
+
+Mod_acc$label <- paste0(Mod_acc$ModalitaAccadimento, "\n",
+                         round(Mod_acc$prop), "%")
+
+ggplot(Mod_acc, 
+       aes(x = "", 
+           y = prop, 
+           fill = ModalitaAccadimento)) +
+  geom_bar(width = 1, 
+           stat = "identity", 
+           color = "black") +
+  geom_text(aes(y = lab.ypos, label = label), 
+            color = "black") +
+  coord_polar("y", 
+              start = 0, 
+              direction = -1) +
+  theme_void() +
+  theme(legend.position = "FALSE") +
+  labs(title = "Injuries by Modality of occurrence")
+```
+
+## Injuries with and without means of transport
+
+```{r}
+# create a pie chart with slice labels
+Mod <- Ita_Regions %>%
+  count(ConSenzaMezzoTrasporto) %>%
+  arrange(desc(ConSenzaMezzoTrasporto)) %>%
+  mutate(prop = round(n*100/sum(n), 1),
+         lab.ypos = cumsum(prop) - 0.5*prop)
+
+Mod$label <- paste0(Mod$ConSenzaMezzoTrasporto, "\n",
+                         round(Mod$prop), "%")
+
+ggplot(Mod, 
+       aes(x = "", 
+           y = prop, 
+           fill = ConSenzaMezzoTrasporto)) +
+  geom_bar(width = 1, 
+           stat = "identity", 
+           color = "black") +
+  geom_text(aes(y = lab.ypos, label = label), 
+            color = "black") +
+  coord_polar("y", 
+              start = 0, 
+              direction = -1) +
+  theme_void() +
+  theme(legend.position = "FALSE") +
+  labs(title = "Injuries with and without means of transport")
+```
+
+## injuries according to the characteristics of the employee
+
+### Management
+
+From the graph below we can see that, the first bin `I` which represents injuries in the industry and services sectors and they have the highest proportion of injuries 81% with respect to injuries in the two other sectors, while injuries in the agricultural sector `A` shows the lowest rate which is about 5% only. For the the injuries in the sectors working on behalf of the state `S` they represent 14% of the injuries across Italy.
+
+
+```{r}
+# create a pie chart with slice labels
+gestione <- Ita_Regions %>%
+  count(Gestione) %>%
+  arrange(desc(Gestione)) %>%
+  mutate(prop = round(n*100/sum(n), 1),
+         lab.ypos = cumsum(prop) - 0.5*prop)
+
+gestione$label <- paste0(gestione$Gestione, "\n",
+                         round(gestione$prop), "%")
+
+ggplot(gestione, 
+       aes(x = "", 
+           y = prop, 
+           fill = Gestione)) +
+  geom_bar(width = 1, 
+           stat = "identity", 
+           color = "black") +
+  geom_text(aes(y = lab.ypos, label = label), 
+            color = "black") +
+  coord_polar("y", 
+              start = 0, 
+              direction = -1) +
+  theme_void() +
+  theme(legend.position = "FALSE") +
+  labs(title = "Injuries by Management")
+```
+
+
+### Injuries by tariff management
+
+Looking at the figure below, The highest rate of injuries are coming from Non-Defined tariff management. However, 25% of the injuries are registered by tertiary sector, industrial sector contributes by 22% to the total injuries, handcraft activities have a rate of 12% and the least contributing sector is other activities with only 9% to the total injuries
+
+
+
+
+```{r}
+G_Tariffaria <- Ita_Regions %>%
+  count(GestioneTariffaria) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(G_Tariffaria, 
+       aes(x = reorder(GestioneTariffaria, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "tariff management", 
+       y = "Percent", 
+       title  = "Injuries by tariff management")
+```
+
+### Injuries by large tariff group: code of the large tariff group
+
+```{r}
+Grande_Tariffaria <- Ita_Regions %>%
+  count(GrandeGruppoTariffario) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(Grande_Tariffaria, 
+       aes(x = reorder(GrandeGruppoTariffario, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "large tariff group", 
+       y = "Percent", 
+       title  = "Injuries by large tariff group")
+```
+From the above graph, agricultural processing and food and Non-Defined sector they contribute by the same proportion of injuries which is 36% fro each, while wood and similar shows almost a zero percent of injuries, furthermore the rate of injuries for metals and machinery, rock and glass mining and textiles and packaging are approximately 1% for each sector.
+
+## The number of injuries by economical sector ativity
+
+```{r}
+# create a treemap with tile labels
+plotdata <- Ita_Regions %>%
+  count(SettoreAttivitaEconomica)
+
+ggplot(plotdata, 
+       aes(fill = SettoreAttivitaEconomica, 
+           area = n, 
+           label = SettoreAttivitaEconomica)) +
+  geom_treemap() + 
+  geom_treemap_text(colour = "white", 
+                    place = "centre") +
+  labs(title = "Injuries by economical sector ativity") +
+  theme(legend.position = "none")
+```
+```{r, results='hide'}
+sort(prop.table(table(Ita_Regions$SettoreAttivitaEconomica)), decreasing = TRUE) #prop.table(table(Ita_Regions$SettoreAttivitaEconomica))
+```
+
+From the figure above we can see that 34.78 of the injuries are not identified as to which economical sector is belong. However, the sector with highest proportion of injuries (0.0536) is Q86 `Assitenza Sanitaria` while the sector with the lowest proportion of injuries (0.000004) is B07 `Estrazione di Minerali Metallifri`. Furthermore, `Commercio al dettalio (escluso quello di autoveicoli e di motocicli)` G47 has 0.04 contribution to the total number of injuries, while F43 `Lavori di costruzione specializzati` has 0.039 from the total proportion of injuries 
+
+## The number of injuries by province
+
+```{r}
+# create a treemap with tile labels
+plotprov <- Ita_Regions %>%
+  count(LuogoAccadimento)
+
+ggplot(plotprov, 
+       aes(fill = LuogoAccadimento, 
+           area = n, 
+           label = LuogoAccadimento)) +
+  geom_treemap() + 
+  geom_treemap_text(colour = "white", 
+                    place = "centre") +
+  labs(title = "Injuries by province") +
+  theme(legend.position = "none")
+```
+```{r, results='hide'}
+sort(prop.table(table(Ita_Regions$LuogoAccadimento)), decreasing = TRUE)
+```
+
+The graph illustrate the proportions of injuries by province, we can see that 0.065 of accidents are occurring from 15 `province of Milan` which is the highest proportion of accidents compared to the other provinces, the second highest proportion of accidents are occurred in 58 `Rome` with a proportion of injuries equals to 0.054, the third province with high proportion of injuries is 1 `Turin`, while the province with the lowest proportion of injuries is 94 `Isernia` which is about 0.00086, the second lowest proportion of injuries is occurred in 101 `Crotone` with proportion of injuries equals to 0.00115 and the third lowest frequent of injuries is occurring in 102 `Vibo Valentia` with about 0.00124. However, the three province with the lowest frequency of injuries are located in south Italy while the province with high frequency of injuries are in the south and center of Italy.
+
+# Analyses of impairment, indemnity, indemnified days
+## Analyse of Indemnity
+
+```{r}
+idemnity <- Ita_Regions %>%
+  count(Indennizzo) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(idemnity, 
+       aes(x = reorder(Indennizzo, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Indemnity", 
+       y = "Percent", 
+       title  = "Injuries with respect to Indemnity")
+```
+```{r}
+sort(prop.table(table(Ita_Regions$Indennizzo)), decreasing = TRUE)
+```
+
+The figure above illustrates the types of indemnity resulting from the injuries, which are `temporary`, `capital`, `direct annuity`and `survivors' annuity`. From the graph we can see that 52% of injuries indemnity are considered to be `TE` temporary, while 4% of the indemnity is considered as capital `CA` and 1% are going directly to annuity `RD` and about 0.1% are survivors' annuity `rs`. 
+
+## Admministrative decision of the fatal outcome
+
+```{r}
+fetal <- Ita_Regions %>%
+  count(DefinizioneAmministrativaEsitoMortale) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(fetal, 
+       aes(x = reorder(DefinizioneAmministrativaEsitoMortale, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Indemnity", 
+       y = "Percent", 
+       title  = "Admministrative decision of the fatal outcome")
+```
+
+
+```{r}
+sort(prop.table(table(Ita_Regions$DefinizioneAmministrativaEsitoMortale)), decreasing = TRUE)
+```
+The figure above shows the decisions about the injuries, which are `positive`, `negative` or `in investigation`. From the figure we analye that 99.78% of the injuries are not defined. However, the injuries with a fatal decision are the positive cases which is 0.125% of the total injuries, while the injuries that are not fatal which is the negative cases are 0.092% of the injuries and the injuries that its outcome are not decided yet `in invstigation` are 0.003% of the total injuries
+
+
+
+## Location of the injuries
+
+
+```{r}
+url <- "http://code.highcharts.com/mapdata/countries/it/it-all.geo.json"
+tmpfile <- tempfile(fileext = ".json")
+download.file(url, tmpfile)
+
+ita <- readLines(tmpfile)
+
+ita <- gsub(".* = ", "", ita)
+ita <- jsonlite::fromJSON(ita, simplifyVector = FALSE)
+
+x <- ita$features[[1]]
+#x$properties
+```
+
+```{r}
+dfita2 <-  ita$features %>% 
+  map_df(function(x){
+    data_frame(hasc = x$properties$hasc, name = x$properties$name)
+  }) %>%  # extract the keys
+  mutate(random = runif(nrow(.))) # create random value
+
+#head(dfita2)
+
+df <- read.csv('map.csv')
+df <- df[,-4:-7]
+#head(df)
+
+data("Ita_Regions")
+ito <- Ita_Regions %>%
+  count(LuogoAccadimento)
+
+df1 <- df %>% inner_join(ito, by = "LuogoAccadimento")
+#head(df1)
+```
+
+```{r}
+highchart(type = "map") %>% 
+  hc_title(text = "The number of injuries by province") %>% 
+  hc_add_series_map(map = ita, df = df1, joinBy = "hasc", value = "n")
+```
+
+
+The map as well confirmed that, the provinces with the highest number of injuries are Mialn Rome and Turin.
+
+
+
+
+
+# Total and permanent disability
+
+Total permanent disability (TPD) is a condition in which an individual is no longer able to work due to injuries. Total permanent disability, also called permanent total disability, applies to cases in which the individual may never be able to work again.
+
+
+
+## Degree of impairment > 60
+
+```{r}
+data(Ita_Regions)
+GradoMenomazione_60 <- Ita_Regions[, c("GradoMenomazione","Indennizzo", "GiorniIndennizzati")] 
+
+GradoMenomazione_60 <-  GradoMenomazione_60 %>%
+                       filter(GradoMenomazione > 60)
+```
+
+
+
+
+
+The table below shows information about the degree of impairment when it is more than 60:
+```{r}
+reactable(GradoMenomazione_60, searchable = TRUE, minRows = 10)
+```
+
+
+```{r}
+grad_60 <- GradoMenomazione_60 %>%
+  count(Indennizzo) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(grad_60, 
+       aes(x = reorder(Indennizzo, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Indennizzo", 
+       y = "Percent", 
+       title  = "Injuries with respect to  by Indemnity")
+```
+
+The analysis of the degree of impairment is crucial in defining the total and permanent disability, here if the insurance company based on this dataset decide to identify a person with degree of impairment greater than 60 as TPA, then from the table above we can see that 94% of the workers with degree of impairment greater than 60 are categorized as immediate annuity `RD`, which offers an immediate income to the annuitant, and 6% are categorized as survivors' annuity `DS`, which allows the annuitant to ensure after death, a continuous lifetime annuity for their dependents. 
+
+To check if there is a relation between the days of compensation and indemnity a Biserial correlation test is applied.
+
+```{r}
+cor <- round(biserial.cor(GradoMenomazione_60$GiorniIndennizzati, 
+             GradoMenomazione_60$Indennizzo), 4)
+```
+
+From the test we can see that there is almost no correlation (`r cor`) between the days compensated and indemnity.
+
+```{r}
+ggplot(GradoMenomazione_60, 
+       aes(x = factor(Indennizzo,
+                      labels = c("Dirict annuity",
+                                 "Survivors' annuity")), 
+           y = GiorniIndennizzati, 
+           color = Indennizzo)) +
+  geom_boxplot(size=1,
+               outlier.shape = 1,
+               outlier.color = "black",
+               outlier.size  = 3) +
+  geom_jitter(alpha = 0.5, 
+              width=.2) + 
+  #scale_y_continuous(label = dollar) +
+  labs(title = "Days of compensation according to indemnity",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  coord_flip()
+```
+
+
+## Degree of impairment > 40
+
+```{r}
+data(Ita_Regions)
+GradoMenomazione_40 <- Ita_Regions[, c("GradoMenomazione","Indennizzo", "GiorniIndennizzati")] 
+
+GradoMenomazione_40 <-  GradoMenomazione_40 %>%
+                       filter(GradoMenomazione > 40)
+```
+
+The table below shows information about the degree of impairment when it is more than 60:
+
+```{r}
+reactable(GradoMenomazione_40, searchable = TRUE, minRows = 10)
+```
+
+```{r}
+grad_40 <- GradoMenomazione_40 %>%
+  count(Indennizzo) %>%
+  mutate(pct = n / sum(n),
+         pctlabel = paste0(round(pct*100), "%"))
+
+# plot the bars as percentages, 
+# in decending order with bar labels
+ggplot(grad_40, 
+       aes(x = reorder(Indennizzo, -pct),
+           y = pct)) + 
+  geom_bar(stat = "identity", 
+           fill = "indianred3", 
+           color = "black") +
+  geom_text(aes(label = pctlabel), 
+            vjust = -0.25) +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Indennizzo", 
+       y = "Percent", 
+       title  = "Injuries with respect to  by Indemnity")
+```
+
+The analysis of degree of impairment is crucial in defining the total and permanent disability, here if the insurance company based on this dataset decide to identify a person with degree of impairment greater than 40 as TPA, then from the table above we can see that 98% of the workers with degree of impairment greater than 40 are categorized as immediate annuity `RD`, which offers an immediate income to the annuitant, and 2% are categorized as survivors' annuity `DS`, which allows the annuitant to ensure after death, a continuous lifetime annuity for their dependents. However, when the insurance company decrease the threshold of the degree of impairment to 40, the number of persons defined as TPD is 2349, while when the threshold of the degree of impairment is 60, the number of persons defined as TPD is 856. 
+
+
+```{r}
+corr <- round(biserial.cor(GradoMenomazione_40$GiorniIndennizzati,
+                     GradoMenomazione_40$Indennizzo), 4)
+```
+
+From the test we can see that there is almost no correlation (`r corr`) between the days compensated and indemnity.
+```{r}
+ggplot(GradoMenomazione_40, 
+       aes(x = factor(Indennizzo,
+                      labels = c("Dirict annuity",
+                                 "Survivors' annuity")), 
+           y = GiorniIndennizzati, 
+           color = Indennizzo)) +
+  geom_boxplot(size=1,
+               outlier.shape = 1,
+               outlier.color = "black",
+               outlier.size  = 3) +
+  geom_jitter(alpha = 0.5, 
+              width=.2) + 
+  #scale_y_continuous(label = dollar) +
+  labs(title = "Days of compensation according to indemnity",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  coord_flip()
+```
+
+
+
+
+
+
